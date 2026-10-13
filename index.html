@@ -306,7 +306,7 @@
                     <div id="players-dashboard" class="flex flex-col space-y-2.5 overflow-y-auto flex-grow pr-1"></div>
                 </div>
 
-                <!-- 下半部：美化音樂播放控制卡片（完全還原初始檔案設定） -->
+                <!-- 下半部：美化音樂播放控制卡片 -->
                 <div class="mt-3 pt-3 border-t-2 border-amber-200/80 flex-shrink-0 bg-amber-50/70 rounded-2xl p-3 border border-amber-200 shadow-inner">
                     <div class="flex items-center justify-between mb-2">
                         <div class="flex items-center gap-2 truncate">
@@ -439,6 +439,14 @@
             { name: "醬瓜罐頭", icon: "🫙", score: -1 }
         ];
 
+        // 需求1, 5: 內定 4 位 AI 角色及其隨機強度區間 (均等機率 25%)
+        const aiProfiles = [
+            { name: "小羅羅", minPower: 90, maxPower: 100 },
+            { name: "安得鹿", minPower: 0,  maxPower: 60 },
+            { name: "大黑怪", minPower: 0,  maxPower: 90 },
+            { name: "寶石公主", minPower: 60, maxPower: 90 }
+        ];
+
         let peer = null;
         let hostConn = null;
         let players = [];
@@ -480,7 +488,6 @@
             return audioCtx;
         }
 
-        // 音樂播放器速度調整功能 (完全還原初始檔案設定)
         function setMusicSpeed(speedRate, buttonEl) {
             const bgm = document.getElementById('bgm');
             const inGameAudio = document.getElementById('audioPlayerInGame');
@@ -493,13 +500,11 @@
                 statusText.textContent = `${speedRate}x`;
             }
 
-            // 按鈕切換高亮樣式
             const buttons = document.querySelectorAll('.music-speed-btn');
             buttons.forEach(btn => btn.classList.remove('active'));
             if (buttonEl) buttonEl.classList.add('active');
         }
 
-        // 單音調播放器（完全還原初始檔案設定）
         function playSingleNote(freq, duration, type = 'square', gainValue = 0.12) {
             try {
                 const ctx = getAudioContext();
@@ -519,7 +524,6 @@
             }
         }
 
-        // 停止背景音樂循環（完全還原初始檔案設定）
         function stopBgm() {
             currentBgmType = null;
             if (bgmTimeoutId) {
@@ -528,7 +532,6 @@
             }
         }
 
-        // 播放瑪利歐勝利音樂（完全還原初始檔案設定）
         function playMarioVictoryFanfare() {
             getAudioContext();
             stopBgm();
@@ -562,7 +565,6 @@
             playNext();
         }
 
-        // 播放吃到正確食物的清脆躍動音效（完全還原初始檔案設定）
         function playScoreSound() {
             try {
                 const ctx = getAudioContext();
@@ -587,7 +589,6 @@
             }
         }
 
-        // 播放吃到不可放入食物時的爆炸音效（完全還原初始檔案設定）
         function playExplosionSound() {
             try {
                 const ctx = getAudioContext();
@@ -623,7 +624,6 @@
             }
         }
 
-        // 播放煙火爆炸聲效（完全還原初始檔案設定）
         function playFireworkBoomSound() {
             try {
                 const ctx = getAudioContext();
@@ -667,13 +667,12 @@
             }
         }
 
-        // 解鎖瀏覽器音訊限制（完全還原初始檔案設定）
         function unlockAudio() {
             getAudioContext();
             const bgm = document.getElementById('bgm');
             if (bgm && bgm.paused) {
                 bgm.play().then(() => {
-                    bgm.pause(); // 預先點擊觸發以解鎖音訊權限
+                    bgm.pause(); 
                     bgm.currentTime = 0;
                 }).catch(() => {});
             }
@@ -990,28 +989,52 @@
             finalizePlayersAndStart();
         });
 
+        // 需求1, 2, 3, 4, 5: 產生並選取不重複的 4 位 AI 角色
+        function generateAIPlayer(usedNamesSet = new Set()) {
+            // 過濾未使用的 AI 角色 (滿足25%均等隨機抽籤)
+            const availableProfiles = aiProfiles.filter(profile => !usedNamesSet.has(profile.name));
+            if (availableProfiles.length === 0) return null;
+
+            const selectedProfile = availableProfiles[Math.floor(Math.random() * availableProfiles.length)];
+            usedNamesSet.add(selectedProfile.name);
+
+            // 計算強度區間內的隨機整數百分比
+            const power = Math.floor(Math.random() * (selectedProfile.maxPower - selectedProfile.minPower + 1)) + selectedProfile.minPower;
+            const aiAvatar = getRandomAvatar();
+            
+            // 需求4: 強度顯示於 AI 名稱後，例：小羅羅(100%)
+            const baseNameWithPower = `🤖 ${selectedProfile.name}(${power}%)`;
+
+            return {
+                id: 'ai_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                rawName: selectedProfile.name,
+                name: baseNameWithPower,
+                displayName: baseNameWithPower,
+                avatar: aiAvatar,
+                conn: null,
+                isAI: true,
+                power: power, // 強度比例 (0 - 100)
+                team: null,
+                score: 0,
+                x: 0.2 + Math.random() * 0.6,
+                y: 0.88
+            };
+        }
+
         function finalizePlayersAndStart() {
             totalFoodToSpawn = parseInt(document.getElementById('select-food-count').value, 10);
             foodDropSpeed = parseFloat(document.getElementById('select-drop-speed').value);
             const aiToAddCount = parseInt(document.getElementById('select-ai-count').value, 10);
             gameMode = document.getElementById('select-game-mode').value;
 
-            const aiNames = ['🤖 智慧小安', '🤖 助人小傑'];
+            // 追蹤已使用的 AI 名稱以確保不重複
+            const usedAINames = new Set(players.filter(p => p.isAI).map(p => p.rawName));
 
             for (let i = 0; i < aiToAddCount; i++) {
-                const aiAvatar = getRandomAvatar();
-                players.push({
-                    id: 'ai_' + Date.now() + '_' + i,
-                    name: aiNames[i] || `🤖 AI助手${i+1}`,
-                    displayName: aiNames[i] || `🤖 AI助手${i+1}`,
-                    avatar: aiAvatar,
-                    conn: null,
-                    isAI: true,
-                    team: null,
-                    score: 0,
-                    x: 0.3 + (i * 0.4),
-                    y: 0.88
-                });
+                const aiPlayer = generateAIPlayer(usedAINames);
+                if (aiPlayer) {
+                    players.push(aiPlayer);
+                }
             }
 
             if (gameMode === 'team') {
@@ -1025,21 +1048,14 @@
                 let redCount = players.filter(p => p.team === 'red').length;
                 let whiteCount = players.filter(p => p.team === 'white').length;
 
+                // 若人數不等，加入 1 名平衡 AI
                 if (redCount !== whiteCount) {
                     const needTeam = redCount < whiteCount ? 'red' : 'white';
-                    const aiAvatar = getRandomAvatar();
-                    players.push({
-                        id: 'ai_team_balance_' + Date.now(),
-                        name: '🤖 平衡AI',
-                        displayName: '🤖 平衡AI',
-                        avatar: aiAvatar,
-                        conn: null,
-                        isAI: true,
-                        team: needTeam,
-                        score: 0,
-                        x: 0.5,
-                        y: 0.88
-                    });
+                    const balanceAI = generateAIPlayer(usedAINames);
+                    if (balanceAI) {
+                        balanceAI.team = needTeam;
+                        players.push(balanceAI);
+                    }
                 }
 
                 players.forEach(p => {
@@ -1055,7 +1071,7 @@
 
             renderLobbyPlayers();
 
-            // 完全還原一開始 (安得烈食物銀行接接食物.html) 按開始遊戲後播放 Two_Coins_Left.mp3 的邏輯
+            // 按開始遊戲後播放背景音樂 Two_Coins_Left.mp3
             const bgm = document.getElementById('bgm');
             getAudioContext();
             if (bgm) {
@@ -1219,15 +1235,18 @@
             // 執行參賽者圖示碰撞彈開檢查
             handlePlayerCollisions();
 
-            // 更新 AI 位置
+            // 更新 AI 位置 (根據強度 power 調整 AI 的移動反應速度與追焦準確度)
             players.filter(p => p.isAI).forEach(ai => {
                 const goodFoods = activeFoods.filter(f => f.score > 0);
                 if (goodFoods.length > 0) {
                     const target = goodFoods[0];
-                    if (ai.x < target.x) ai.x += 0.003;
-                    if (ai.x > target.x) ai.x -= 0.003;
-                    if (ai.y < target.y) ai.y += 0.003;
-                    if (ai.y > target.y) ai.y -= 0.003;
+                    // AI 強度換算為位移步幅 (0.001 - 0.004)
+                    const moveSpeed = 0.001 + ( (ai.power || 50) / 100 ) * 0.003;
+                    
+                    if (ai.x < target.x) ai.x += moveSpeed;
+                    if (ai.x > target.x) ai.x -= moveSpeed;
+                    if (ai.y < target.y) ai.y += moveSpeed;
+                    if (ai.y > target.y) ai.y -= moveSpeed;
                 }
             });
 
@@ -1428,7 +1447,6 @@
             });
         }
 
-        // 完全還原一開始 (安得烈食物銀行接接食物.html) 暫停主背景音樂「Two_Coins_Left.mp3」並播放頒獎音樂的邏輯
         function showFinalResult() {
             const bgm = document.getElementById('bgm');
             const inGameAudio = document.getElementById('audioPlayerInGame');
